@@ -1,0 +1,21 @@
+{
+  "name": "turbolinks_legacy",
+  "description": "turbolinks legacy test suite",
+  "version": "0.0.1",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/efficiently/turbolinks_legacy.git"
+  },
+  "devDependencies": {
+    "underscore": "*",
+    "coffee-script": "*",
+    "karma": "^0.13.0",
+    "karma-firefox-launcher": "^0.1.6",
+    "karma-mocha": "^0.1.4",
+    "karma-phantomjs-launcher": "^0.2.1",
+    "karma-proclaim": "^1.0.0",
+    "karma-sprockets-mincer": "",
+    "mocha": "~2.2.0",
+    "proclaim": "~3.3.0"
+  }
+}
