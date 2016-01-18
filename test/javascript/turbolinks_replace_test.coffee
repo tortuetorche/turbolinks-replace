@@ -170,7 +170,7 @@ suite 'Turbolinks.replace()', ->
     """
     body = @$('body')
     change = @$('#change')
-    temporary = @$('#temporary')
+    temporary = @jQuery('#temporary').html()
     beforeUnloadFired = loadFired = false
     @jQuery(@document).on 'page:before-unload', =>
       assert.equal @window.i, 1
@@ -189,7 +189,7 @@ suite 'Turbolinks.replace()', ->
       assert.ok beforeUnloadFired
       assert.equal afterRemoveNodes.length, 0
       assert.deepEqual event.originalEvent.data, [@$('#temporary'), @$('#change'), @$('[id="change:key"]')]
-      assert.equal @window.i, 2 # scripts are re-run
+      assert.equal @window.i, 1 # only scripts within the changed nodes are re-run
       assert.isUndefined @window.bodyScript
       assert.isUndefined @window.headScript
       assert.notOk @$('#new-div')
@@ -201,7 +201,7 @@ suite 'Turbolinks.replace()', ->
       assert.equal @jQuery('#permanent').text(), 'permanent content'
       assert.equal @$('meta[name="csrf-token"]').getAttribute('content'), 'token'
       assert.equal @document.title, 'new title'
-      assert.notEqual @$('#temporary'), temporary # temporary nodes are cloned
+      assert.notEqual @jQuery('#temporary').html, temporary # temporary nodes are cloned
       assert.notEqual @$('#change'), change # changed nodes are cloned
       assert.equal @$('body'), body
 
@@ -227,7 +227,7 @@ suite 'Turbolinks.replace()', ->
       assert.equal event.originalEvent.data, afterRemoveNodes.shift()
     @jQuery(@document).on 'page:change', =>
       assert.equal afterRemoveNodes.length, 0
-      assert.equal @window.i, 2 # scripts are re-run
+      assert.equal @window.i, 1 # only scripts within the changed nodes are re-run
       assert.isUndefined @window.outsideScript
       # FIXME: Buggy with IE8
       assert.equal @window.insideScript, true
@@ -276,7 +276,6 @@ suite 'Turbolinks.replace()', ->
       </html>
     """
     body = @$('body')
-    permanent = @$('#permanent')
     @jQuery(@document).on 'page:load', (event) =>
       assert.equal @document.title, 'specified title'
       done()
@@ -295,8 +294,146 @@ suite 'Turbolinks.replace()', ->
       </html>
     """
     body = @$('body')
-    permanent = @$('#permanent')
     @jQuery(@document).on 'page:load', (event) =>
       assert.equal @document.title, 'title'
       done()
     @Turbolinks.replace(doc, title: false)
+
+  # https://connect.microsoft.com/IE/feedback/details/811408/
+  test "IE textarea placeholder bug", (done) ->
+    doc = """
+      <!DOCTYPE html>
+      <html>
+      <head>
+        <meta charset="utf-8">
+        <title>title</title>
+      </head>
+      <body>
+        <div id="form">
+          <textarea placeholder="placeholder" id="textarea1"></textarea>
+          <textarea placeholder="placeholder" id="textarea2">placeholder</textarea>
+          <textarea id="textarea3">value</textarea>
+        </div>
+        <div id="permanent" data-turbolinks-permanent><textarea placeholder="placeholder" id="textarea-permanent"></textarea></div>
+      </body>
+      </html>
+    """
+    change = 0
+    @jQuery(@document).on 'page:change', =>
+      change += 1
+      if change is 1
+        assert.equal @$('#textarea1').value, ''
+        assert.equal @$('#textarea2').value, 'placeholder'
+        assert.equal @$('#textarea3').value, 'value'
+        assert.equal @$('#textarea-permanent').value, ''
+        @Turbolinks.visit('iframe2.html')
+      else if change is 2
+        assert.equal @$('#textarea-permanent').value, ''
+        setTimeout =>
+          @window.history.back()
+        , 0
+      else if change is 3
+        assert.equal @$('#textarea1').value, ''
+        assert.equal @$('#textarea2').value, 'placeholder'
+        assert.equal @$('#textarea3').value, 'value'
+        assert.equal @$('#textarea-permanent').value, ''
+        @$('#textarea-permanent').value = 'test'
+        @Turbolinks.replace(doc, change: ['form'])
+      else if change is 4
+        assert.equal @$('#textarea1').value, ''
+        assert.equal @$('#textarea2').value, 'placeholder'
+        assert.equal @$('#textarea3').value, 'value'
+        assert.equal @$('#textarea-permanent').value, 'test'
+        assert.equal @$('#form').ownerDocument, @document
+        done()
+    @Turbolinks.replace(doc, flush: true)
+
+  test "works with :change key of node that also has data-turbolinks-temporary", (done) ->
+    html = """
+      <div id="temporary" data-turbolinks-temporary>new temporary content</div>
+    """
+    afterRemoveNodes = [@$('#temporary')]
+    @jQuery(@document).on 'page:after-remove', (event) =>
+      assert.equal event.originalEvent.data, afterRemoveNodes.shift()
+    @jQuery(@document).on 'page:change', =>
+      assert.equal afterRemoveNodes.length, 0
+      assert.equal @jQuery('#temporary').text(), 'new temporary content'
+      done()
+    @Turbolinks.replace(html, change: ['temporary'])
+
+  test "works with :keep key of node that also has data-turbolinks-permanent", (done) ->
+    html = """
+      <!DOCTYPE html>
+      <html>
+      <head>
+        <meta charset="utf-8">
+        <title>title</title>
+      </head>
+      <body>
+        <div id="permanent" data-turbolinks-permanent></div>
+      </body>
+      </html>
+    """
+    permanent = @jQuery('#permanent').html()
+    @jQuery(@document).on 'page:change', =>
+      assert.equal @jQuery('#permanent').html(), permanent
+      done()
+    @Turbolinks.replace(html, keep: ['permanent'])
+
+  test "doesn't run scripts inside :change nodes more than once", (done) ->
+    doc = """
+      <!DOCTYPE html>
+      <html>
+      <head>
+        <title>title</title>
+      </head>
+      <body>
+        <div id="change">
+          <script>window.count = (window.count || 0) + 1;</script>
+          <script data-turbolinks-eval="false">window.count = (window.count || 0) + 1;</script>
+        </div>
+      </body>
+      </html>
+    """
+    @jQuery(@document).on 'page:partial-load', (event) =>
+      assert.equal @window.count, 1 # using importNode before swapping the nodes would double-eval scripts in Chrome/Safari
+      done()
+    @Turbolinks.replace(doc, change: ['change'])
+
+  test "appends elements on change when the append option is passed", (done) ->
+    doc = """
+      <!DOCTYPE html>
+      <html>
+      <head>
+        <title>title</title>
+      </head>
+      <body>
+        <div id="list"><div id="another-list-item">inserted list item</div></div>
+      </body>
+      </html>
+    """
+    @Turbolinks.replace(doc, append: ['list'])
+    assert.equal @jQuery('#list').children().length, 2 # children is similar to childNodes except it does not include text nodes
+    assert.equal @jQuery(@jQuery('#list').children()[0]).text(), 'original list item'
+    assert.equal @jQuery(@jQuery('#list').children()[1]).text(), 'inserted list item'
+
+    done()
+
+  test "prepends elements on change when the prepend option is passed", (done) ->
+    doc = """
+      <!DOCTYPE html>
+      <html>
+      <head>
+        <title>title</title>
+      </head>
+      <body>
+        <div id="list"><div id="another-list-item">inserted list item</div></div>
+      </body>
+      </html>
+    """
+    @Turbolinks.replace(doc, prepend: ['list'])
+    assert.equal @jQuery('#list').children().length, 2 # children is similar to childNodes except it does not include text nodes
+    assert.equal @jQuery(@jQuery('#list').children()[0]).text(), 'inserted list item'
+    assert.equal @jQuery(@jQuery('#list').children()[1]).text(), 'original list item'
+
+    done()

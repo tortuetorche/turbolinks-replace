@@ -26,6 +26,7 @@ module.exports = function(config) {
     // list of files / patterns to load in the browser
     files: [
       'test/javascript/iframe.html',
+      'test/javascript/iframe2.html',
     ],
 
     // list of files to exclude
